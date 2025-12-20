@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaotic OSINT</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Kaotic OSINT</h1>
+            <p class="subtitle">Comprehensive Intelligence Gathering</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="username">Username</button>
+            <button class="tab-btn" data-tab="domain">Domain</button>
+            <button class="tab-btn" data-tab="social">Social</button>
+            <button class="tab-btn" data-tab="breach">Breach</button>
+        </div>
+
+        <!-- Username Enumeration Tab -->
+        <div class="tab-content active" id="username-tab">
+            <h2>Username/Email Enumeration</h2>
+            <input type="text" id="username-input" placeholder="Enter username or email">
+            <button id="username-search" class="btn-primary">Search Across Platforms</button>
+            <div id="username-results" class="results"></div>
+        </div>
+
+        <!-- Domain Intelligence Tab -->
+        <div class="tab-content" id="domain-tab">
+            <h2>Domain & IP Intelligence</h2>
+            <input type="text" id="domain-input" placeholder="Enter domain or IP address">
+            <div class="button-group">
+                <button id="whois-lookup" class="btn-secondary">WHOIS</button>
+                <button id="dns-lookup" class="btn-secondary">DNS</button>
+                <button id="subdomain-enum" class="btn-secondary">Subdomains</button>
+                <button id="port-scan" class="btn-secondary">Ports</button>
+            </div>
+            <div id="domain-results" class="results"></div>
+        </div>
+
+        <!-- Social Media Tab -->
+        <div class="tab-content" id="social-tab">
+            <h2>Social Media Aggregation</h2>
+            <input type="text" id="social-input" placeholder="Enter name or handle">
+            <div class="platform-checks">
+                <label><input type="checkbox" value="twitter" checked> Twitter/X</label>
+                <label><input type="checkbox" value="reddit" checked> Reddit</label>
+                <label><input type="checkbox" value="github" checked> GitHub</label>
+                <label><input type="checkbox" value="linkedin" checked> LinkedIn</label>
+                <label><input type="checkbox" value="instagram" checked> Instagram</label>
+                <label><input type="checkbox" value="facebook" checked> Facebook</label>
+            </div>
+            <button id="social-search" class="btn-primary">Aggregate Profiles</button>
+            <div id="social-results" class="results"></div>
+        </div>
+
+        <!-- Breach Database Tab -->
+        <div class="tab-content" id="breach-tab">
+            <h2>Breach Database Check</h2>
+            <input type="text" id="breach-input" placeholder="Enter email address">
+            <button id="breach-search" class="btn-primary">Check Breaches</button>
+            <div id="breach-results" class="results"></div>
+        </div>
+
+        <div class="footer">
+            <button id="export-btn" class="btn-export">Export Results</button>
+            <button id="clear-btn" class="btn-clear">Clear All</button>
+        </div>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Icons</title>
+</head>
+<body>
+    <h1>Kaotic OSINT Icon Generator</h1>
+    <canvas id="canvas16" width="16" height="16" style="display:none;"></canvas>
+    <canvas id="canvas48" width="48" height="48" style="display:none;"></canvas>
+    <canvas id="canvas128" width="128" height="128" style="display:none;"></canvas>
+
+    <div>
+        <h2>Download Icons:</h2>
+        <a id="download16" download="icon16.png">Download 16x16</a><br>
+        <a id="download48" download="icon48.png">Download 48x48</a><br>
+        <a id="download128" download="icon128.png">Download 128x128</a>
+    </div>
+
+    <script>
+        function createIcon(size) {
+            const canvas = document.getElementById(`canvas${size}`);
+            const ctx = canvas.getContext('2d');
+
+            // Background gradient
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#667eea');
+            gradient.addColorStop(1, '#764ba2');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+
+            // Draw "K" letter
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${size * 0.6}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('K', size / 2, size / 2);
+
+            return canvas.toDataURL('image/png');
+        }
+
+        // Generate icons
+        const icon16 = createIcon(16);
+        const icon48 = createIcon(48);
+        const icon128 = createIcon(128);
+
+        // Set download links
+        document.getElementById('download16').href = icon16;
+        document.getElementById('download48').href = icon48;
+        document.getElementById('download128').href = icon128;
+
+        console.log('Icons generated! Click the download links to save them to the icons folder.');
+    </script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# Chrome Extension .gitignore
+
+# Development files
+*.yaml
+promptfooconfig.yaml
+desktop.ini
+.DS_Store
+
+# API Keys (IMPORTANT: Never commit actual API keys)
+utils/api-keys.js
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.sublime-*
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Package files
+*.zip
+*.crx
+*.pem
+
+# Node modules (if you add npm later)
+node_modules/
+package-lock.json
+
+# Build files
+dist/
+build/
