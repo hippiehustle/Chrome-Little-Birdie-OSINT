@@ -30,6 +30,7 @@ Aggregate social media profiles across multiple platforms:
 - View breach details including compromised data types
 - Track recent security breaches
 - Fallback to a limited breach list when no API key is configured so you still see meaningful results
+- Add your `HIBP_API_KEY` to `utils/api-keys.js` for personalized, email-specific breach checks; without it, the Breach tab shows a limited sample/global data set only
 
 ### 5. Page Analysis (Auto-Extract)
 Automatically analyzes web pages to extract:

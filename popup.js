@@ -113,6 +113,7 @@ class OSINTPopup {
                 this.results.username = response.data;
                 this.displayUsernameResults(response.data);
                 this.showStatus(`Found ${response.data.length} results`, 'success');
+                chrome.storage.local.set({ lastResults: this.results });
             } else {
                 throw new Error(response.error);
             }
@@ -154,6 +155,7 @@ class OSINTPopup {
                 this.results.whois = response.data;
                 this.displayDomainResults(response.data, 'WHOIS Information');
                 this.showStatus('WHOIS lookup completed', 'success');
+                chrome.storage.local.set({ lastResults: this.results });
             } else {
                 throw new Error(response.error);
             }
@@ -178,6 +180,7 @@ class OSINTPopup {
                 this.results.dns = response.data;
                 this.displayDomainResults(response.data, 'DNS Records');
                 this.showStatus('DNS lookup completed', 'success');
+                chrome.storage.local.set({ lastResults: this.results });
             } else {
                 throw new Error(response.error);
             }
@@ -202,6 +205,7 @@ class OSINTPopup {
                 this.results.subdomains = response.data;
                 this.displaySubdomainResults(response.data);
                 this.showStatus(`Found ${response.data.length} subdomains`, 'success');
+                chrome.storage.local.set({ lastResults: this.results });
             } else {
                 throw new Error(response.error);
             }
@@ -226,6 +230,7 @@ class OSINTPopup {
                 this.results.ports = response.data;
                 this.displayPortResults(response.data);
                 this.showStatus('Port scan completed', 'success');
+                chrome.storage.local.set({ lastResults: this.results });
             } else {
                 throw new Error(response.error);
             }
@@ -276,7 +281,7 @@ class OSINTPopup {
             item.innerHTML = `
                 <h3>Port ${port.port}</h3>
                 <p><strong>Service:</strong> ${port.service}</p>
-                <p><strong>Status:</strong> ${port.open ? 'Open' : 'Closed'}</p>
+                <p><strong>Status:</strong> ${port.status === 'unknown' ? 'Unknown (blocked/timeout)' : (port.open ? 'Open' : 'Closed')}</p>
             `;
             resultsDiv.appendChild(item);
         });
@@ -298,6 +303,7 @@ class OSINTPopup {
                 this.results.social = response.data;
                 this.displaySocialResults(response.data);
                 this.showStatus(`Found profiles on ${response.data.filter(r => r.found).length} platforms`, 'success');
+                chrome.storage.local.set({ lastResults: this.results });
             } else {
                 throw new Error(response.error);
             }
@@ -321,6 +327,8 @@ class OSINTPopup {
                 ${result.username ? `<p><strong>Username:</strong> ${result.username}</p>` : ''}
                 ${result.followers ? `<p><strong>Followers:</strong> ${result.followers}</p>` : ''}
                 ${result.bio ? `<p><strong>Bio:</strong> ${result.bio}</p>` : ''}
+                ${result.details ? `<p>${result.details}</p>` : ''}
+                ${result.error ? `<p style="color: red;">${result.error}</p>` : ''}
             `;
             resultsDiv.appendChild(item);
         });
@@ -345,6 +353,7 @@ class OSINTPopup {
                 } else {
                     this.showStatus('No breaches found', 'success');
                 }
+                chrome.storage.local.set({ lastResults: this.results });
             } else {
                 throw new Error(response.error);
             }
@@ -357,6 +366,13 @@ class OSINTPopup {
     displayBreachResults(data) {
         const resultsDiv = document.getElementById('breach-results');
         resultsDiv.innerHTML = '';
+
+        if (data.note) {
+            const note = document.createElement('div');
+            note.className = 'result-item';
+            note.innerHTML = `<p><strong>Note:</strong> ${data.note}</p>`;
+            resultsDiv.appendChild(note);
+        }
 
         if (data.breaches && data.breaches.length > 0) {
             data.breaches.forEach(breach => {
@@ -403,6 +419,7 @@ class OSINTPopup {
         document.querySelectorAll('input[type="text"]').forEach(input => {
             input.value = '';
         });
+        chrome.storage.local.remove('lastResults');
         this.showStatus('All data cleared', 'info');
     }
 
