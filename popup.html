@@ -18,6 +18,7 @@
             <button class="tab-btn" data-tab="domain">Domain</button>
             <button class="tab-btn" data-tab="social">Social</button>
             <button class="tab-btn" data-tab="breach">Breach</button>
+            <button class="tab-btn" data-tab="nsfw">NSFW</button>
         </div>
 
         <!-- Username Enumeration Tab -->
@@ -63,6 +64,16 @@
             <input type="text" id="breach-input" placeholder="Enter email address">
             <button id="breach-search" class="btn-primary">Check Breaches</button>
             <div id="breach-results" class="results"></div>
+        </div>
+
+        <!-- NSFW Scan Tab -->
+        <div class="tab-content" id="nsfw-tab">
+            <h2>NSFW Profile Scan</h2>
+            <p class="disclaimer">Optional. Scans public NSFW platforms using HEAD/GET checks. Results may be inconclusive if a platform blocks anonymous lookups.</p>
+            <label class="nsfw-consent"><input type="checkbox" id="nsfw-consent"> I consent to perform NSFW lookups for this query.</label>
+            <input type="text" id="nsfw-input" placeholder="Enter username, email, or phone number">
+            <button id="nsfw-search" class="btn-primary">Scan NSFW Sources</button>
+            <div id="nsfw-results" class="results"></div>
         </div>
 
         <div class="footer">

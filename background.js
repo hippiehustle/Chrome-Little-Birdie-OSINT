@@ -7,6 +7,39 @@ class OSINTEngine {
         this.setupMessageListener();
     }
 
+    normalizeIdentity(query) {
+        const trimmed = (query || '').trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const digits = trimmed.replace(/\D/g, '');
+
+        if (emailRegex.test(trimmed)) {
+            const [local] = trimmed.toLowerCase().split('@');
+            return {
+                type: 'email',
+                raw: trimmed.toLowerCase(),
+                usernameCandidate: local.replace(/[^a-z0-9]/gi, ''),
+                searchTerm: trimmed.toLowerCase()
+            };
+        }
+
+        if (digits.length >= 7) {
+            const e164 = digits.length === 10 ? `+1${digits}` : `+${digits}`;
+            return {
+                type: 'phone',
+                raw: e164,
+                usernameCandidate: digits,
+                searchTerm: e164
+            };
+        }
+
+        return {
+            type: 'username',
+            raw: trimmed,
+            usernameCandidate: trimmed.replace(/\s+/g, ''),
+            searchTerm: trimmed.replace(/\s+/g, '')
+        };
+    }
+
     async ensureApiKeysLoaded() {
         if (this.apiKeysLoaded) {
             return;
@@ -50,6 +83,8 @@ class OSINTEngine {
                     return await this.searchSocialMedia(request.query, request.platforms);
                 case 'checkBreaches':
                     return await this.checkBreaches(request.email);
+                case 'searchNSFW':
+                    return await this.searchNSFW(request.query);
                 default:
                     return { success: false, error: 'Unknown action' };
             }
@@ -120,8 +155,110 @@ class OSINTEngine {
         return { success: true, data: results };
     }
 
+    getNSFWSources(identity) {
+        const id = identity.usernameCandidate;
+        if (!id) return [];
+
+        const sources = [
+            { name: 'Pornhub', profileUrl: 'https://www.pornhub.com/users/{id}', checkUrl: 'https://www.pornhub.com/users/{id}', preferGet: true },
+            { name: 'ModelHub', profileUrl: 'https://www.pornhub.com/model/{id}', checkUrl: 'https://www.pornhub.com/model/{id}', preferGet: true },
+            { name: 'YouPorn', profileUrl: 'https://www.youporn.com/users/{id}', checkUrl: 'https://www.youporn.com/users/{id}', preferGet: true },
+            { name: 'RedTube', profileUrl: 'https://www.redtube.com/users/{id}', checkUrl: 'https://www.redtube.com/users/{id}', preferGet: true },
+            { name: 'XVideos', profileUrl: 'https://www.xvideos.com/profiles/{id}', checkUrl: 'https://www.xvideos.com/profiles/{id}', preferGet: true },
+            { name: 'XNXX', profileUrl: 'https://www.xnxx.com/profile/{id}', checkUrl: 'https://www.xnxx.com/profile/{id}', preferGet: true },
+            { name: 'XHamster', profileUrl: 'https://xhamster.com/users/{id}', checkUrl: 'https://xhamster.com/users/{id}', preferGet: true },
+            { name: 'SpankBang', profileUrl: 'https://spankbang.com/{id}', checkUrl: 'https://spankbang.com/{id}', preferGet: true },
+            { name: 'Eporner', profileUrl: 'https://www.eporner.com/profile/{id}/', checkUrl: 'https://www.eporner.com/profile/{id}/', preferGet: true },
+            { name: 'Fapello', profileUrl: 'https://fapello.com/{id}', checkUrl: 'https://fapello.com/{id}', preferGet: true },
+            { name: 'Erome', profileUrl: 'https://erome.com/{id}', checkUrl: 'https://erome.com/{id}', preferGet: true },
+            { name: 'Fansly', profileUrl: 'https://fansly.com/{id}', checkUrl: 'https://fansly.com/{id}', preferGet: true },
+            { name: 'ManyVids', profileUrl: 'https://www.manyvids.com/Profile/{id}/', checkUrl: 'https://www.manyvids.com/Profile/{id}/', preferGet: true },
+            { name: 'BongaCams', profileUrl: 'https://bongacams.com/{id}', checkUrl: 'https://bongacams.com/{id}', preferGet: true },
+            { name: 'Chaturbate', profileUrl: 'https://chaturbate.com/{id}/', checkUrl: 'https://chaturbate.com/{id}/', preferGet: true },
+            { name: 'MyFreeCams', profileUrl: 'https://profiles.myfreecams.com/{id}', checkUrl: 'https://profiles.myfreecams.com/{id}', preferGet: true },
+            { name: 'CAM4', profileUrl: 'https://www.cam4.com/{id}', checkUrl: 'https://www.cam4.com/{id}', preferGet: true },
+            { name: 'LiveJasmin', profileUrl: 'https://www.livejasmin.com/en/girl/{id}', checkUrl: 'https://www.livejasmin.com/en/girl/{id}', preferGet: true },
+            { name: 'CamSoda', profileUrl: 'https://www.camsoda.com/{id}', checkUrl: 'https://www.camsoda.com/{id}', preferGet: true },
+            { name: 'FetLife', profileUrl: 'https://fetlife.com/users/{id}', checkUrl: 'https://fetlife.com/users/{id}', preferGet: true },
+            { name: 'AdultFriendFinder', profileUrl: 'https://www.adultfriendfinder.com/p/{id}', checkUrl: 'https://www.adultfriendfinder.com/p/{id}', preferGet: true },
+            { name: 'SwingLifestyle', profileUrl: 'https://www.swinglifestyle.com/members/{id}/', checkUrl: 'https://www.swinglifestyle.com/members/{id}/', preferGet: true },
+            { name: 'Stripchat', profileUrl: 'https://stripchat.com/{id}', checkUrl: 'https://stripchat.com/{id}', preferGet: true },
+            { name: 'FanCentro', profileUrl: 'https://fancentro.com/{id}', checkUrl: 'https://fancentro.com/{id}', preferGet: true },
+            { name: 'NudoStar', profileUrl: 'https://nudostar.com/profile/{id}', checkUrl: 'https://nudostar.com/profile/{id}', preferGet: true },
+            { name: 'IsMyGirl', profileUrl: 'https://www.ismygirl.com/{id}', checkUrl: 'https://www.ismygirl.com/{id}', preferGet: true }
+        ];
+
+        return sources.filter(src => {
+            if (src.supportedTypes && !src.supportedTypes.includes(identity.type)) {
+                return false;
+            }
+            return Boolean(id);
+        });
+    }
+
+    async searchNSFW(query) {
+        const identity = this.normalizeIdentity(query);
+        const identifier = identity.usernameCandidate;
+        const sources = this.getNSFWSources(identity);
+
+        if (!identifier || sources.length === 0) {
+            return { success: false, error: 'No valid identifier or NSFW sources available for this query.' };
+        }
+
+        const checks = sources.map(source => (async () => {
+            try {
+                const profileUrl = source.profileUrl.replace('{id}', identifier);
+                const checkUrl = (source.checkUrl || source.profileUrl).replace('{id}', identifier);
+                const checkResult = await this.checkUrlExists(checkUrl, source.name, { preferGet: source.preferGet });
+                const found = checkResult.found === true;
+
+                return {
+                    platform: source.name,
+                    found,
+                    url: found ? profileUrl : null,
+                    inputType: identity.type,
+                    details: this.describeCheckResult(checkResult)
+                };
+            } catch (error) {
+                return {
+                    platform: source.name,
+                    found: false,
+                    url: null,
+                    inputType: identity.type,
+                    details: 'Unable to check',
+                    error: error.message
+                };
+            }
+        })());
+
+        const settled = await Promise.allSettled(checks);
+        const results = settled.map((result, index) => {
+            if (result.status === 'fulfilled') {
+                return result.value;
+            }
+            return {
+                platform: sources[index].name,
+                found: false,
+                url: null,
+                inputType: identity.type,
+                details: 'Unable to check',
+                error: result.reason?.message || 'Unknown error'
+            };
+        });
+
+        return {
+            success: true,
+            data: {
+                query: identity.raw,
+                inputType: identity.type,
+                identifier,
+                results
+            }
+        };
+    }
+
     // Check if URL exists (profile check)
-    async checkUrlExists(url, platform) {
+    async checkUrlExists(url, platform, options = {}) {
         const evaluateResponse = (response, attemptMethod) => {
             if (!response) {
                 return { found: false, unknown: true, status: null, method: attemptMethod, reason: 'network_error' };
@@ -169,6 +306,11 @@ class OSINTEngine {
                     };
                 }
                 return { found: false, status: response.status, method: 'GET', reason: 'http_error' };
+            }
+
+            if (options.preferGet) {
+                const getResponse = await performRequest('GET');
+                return evaluateResponse(getResponse, 'GET');
             }
 
             // Attempt HEAD first, fall back to GET if necessary

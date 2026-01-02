@@ -24,7 +24,12 @@ Aggregate social media profiles across multiple platforms:
 - Direct links to profiles
 - Multi-platform search capability
 
-### 4. Breach Database Check
+### 4. NSFW Profile Scanning
+- Opt-in NSFW tab that probes many public adult platforms via anonymous HEAD/GET requests
+- Supports username/email/phone inputs (normalized to platform-friendly identifiers)
+- Consent gate, per-result status, and transparent “found / not found / inconclusive” messaging
+
+### 5. Breach Database Check
 - Integration with HaveIBeenPwned API (with optional API key)
 - Check email addresses against known data breaches
 - View breach details including compromised data types
@@ -32,7 +37,7 @@ Aggregate social media profiles across multiple platforms:
 - Fallback to a limited breach list when no API key is configured so you still see meaningful results
 - Add your `HIBP_API_KEY` to `utils/api-keys.js` for personalized, email-specific breach checks; without it, the Breach tab shows a limited sample/global data set only
 
-### 5. Page Analysis (Auto-Extract)
+### 6. Page Analysis (Auto-Extract)
 Automatically analyzes web pages to extract:
 - Email addresses and phone numbers
 - Social media links
@@ -81,11 +86,13 @@ Compress-Archive -Path .\* -DestinationPath kaotic-osint.zip -Exclude *.yaml,des
    - **Domain**: Perform domain intelligence operations
    - **Social**: Aggregate social media profiles
    - **Breach**: Check for data breaches
+   - **NSFW**: Opt-in scan of public adult platforms (requires consent checkbox)
 
 3. **Enter your query** in the input field
 4. **Click the action button** to start the search
 5. **View results** in the results panel
 6. **Export results** using the Export button (saves as JSON)
+7. **NSFW tab**: Check the consent box before running an NSFW scan.
 
 ### Advanced Features
 
