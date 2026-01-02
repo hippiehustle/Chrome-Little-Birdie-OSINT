@@ -83,27 +83,39 @@ class OSINTEngine {
             { name: 'Spotify', url: `https://open.spotify.com/user/${username}`, checkUrl: `https://open.spotify.com/user/${username}` }
         ];
 
-        const results = [];
-
-        for (const platform of platforms) {
+        const platformChecks = platforms.map(platform => (async () => {
             try {
                 const checkResult = await this.checkUrlExists(platform.checkUrl, platform.name);
-                const found = checkResult.found;
-                results.push({
+                const found = checkResult.found === true;
+                return {
                     platform: platform.name,
-                    found: found,
+                    found,
                     url: found ? platform.url : null,
                     details: this.describeCheckResult(checkResult)
-                });
+                };
             } catch (error) {
-                results.push({
+                return {
                     platform: platform.name,
                     found: false,
                     url: null,
                     details: 'Unable to check'
-                });
+                };
             }
-        }
+        })());
+
+        const settledResults = await Promise.allSettled(platformChecks);
+        const results = settledResults.map((result, index) => {
+            if (result.status === 'fulfilled') {
+                return result.value;
+            }
+            const platform = platforms[index];
+            return {
+                platform: platform.name,
+                found: false,
+                url: null,
+                details: 'Unable to check'
+            };
+        });
 
         return { success: true, data: results };
     }
@@ -112,18 +124,18 @@ class OSINTEngine {
     async checkUrlExists(url, platform) {
         const evaluateResponse = (response, attemptMethod) => {
             if (!response) {
-                return { found: false, status: null, method: attemptMethod, reason: 'network_error' };
+                return { found: false, unknown: true, status: null, method: attemptMethod, reason: 'network_error' };
             }
 
             if (response.type === 'opaque') {
-                return { found: false, status: null, method: attemptMethod, reason: 'opaque_response' };
+                return { found: false, unknown: true, status: 'unknown', method: attemptMethod, reason: 'opaque_response' };
             }
 
             if (response.status >= 200 && response.status < 400) {
-                return { found: true, status: response.status, method: attemptMethod, reason: 'ok' };
+                return { found: true, unknown: false, status: response.status, method: attemptMethod, reason: 'ok' };
             }
 
-            return { found: false, status: response.status, method: attemptMethod, reason: 'http_error' };
+            return { found: false, unknown: false, status: response.status, method: attemptMethod, reason: 'http_error' };
         };
 
         const performRequest = async (method) => {
@@ -167,7 +179,7 @@ class OSINTEngine {
                 return headResult;
             }
 
-            if (headResult.reason === 'http_error' && headResult.status && headResult.status !== 405) {
+            if (headResult.reason === 'http_error' && headResult.status && headResult.status !== 405 && headResult.status !== 403) {
                 return headResult;
             }
 
@@ -176,7 +188,7 @@ class OSINTEngine {
             const getResult = evaluateResponse(getResponse, 'GET');
             return getResult;
         } catch (error) {
-            return { found: false, status: null, method: 'GET', reason: error.message };
+            return { found: false, unknown: true, status: null, method: 'GET', reason: error.message };
         }
     }
 
@@ -187,12 +199,12 @@ class OSINTEngine {
             return checkResult.status ? `Profile reachable (HTTP ${checkResult.status})` : 'Profile appears reachable';
         }
 
-        if (checkResult.reason === 'opaque_response') {
-            return 'Profile could not be verified due to opaque response';
-        }
-
         if (checkResult.reason === 'network_error') {
             return 'Network error while checking profile';
+        }
+
+        if (checkResult.unknown) {
+            return 'Profile could not be verified (blocked by CORS/login)';
         }
 
         if (checkResult.reason === 'http_error' && checkResult.status) {
@@ -330,37 +342,71 @@ class OSINTEngine {
                 { port: 8443, service: 'HTTPS-Alt', description: 'Alternative HTTPS' }
             ];
 
-            // Try to check if common web ports are accessible
+            const classifyOutcome = (outcome) => {
+                if (outcome?.response) {
+                    const response = outcome.response;
+                    if (response.type === 'opaque') {
+                        return { open: false, status: 'unknown', reason: 'opaque_response' };
+                    }
+                    if (response.status >= 200 && response.status < 400) {
+                        return { open: true, status: response.status, reason: 'ok' };
+                    }
+                    return { open: false, status: response.status || 'unknown', reason: 'http_error' };
+                }
+
+                if (outcome?.error) {
+                    if (outcome.error.name === 'AbortError') {
+                        return { open: false, status: 'unknown', reason: 'timeout' };
+                    }
+                    return { open: false, status: 'unknown', reason: 'network_error' };
+                }
+
+                return { open: false, status: 'unknown', reason: 'unknown_error' };
+            };
+
+            const attemptFetch = async (testUrl, method, mode = 'cors') => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                try {
+                    const response = await fetch(testUrl, {
+                        method,
+                        mode,
+                        signal: controller.signal,
+                        redirect: 'follow'
+                    });
+                    clearTimeout(timeoutId);
+                    return { response };
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    return { error };
+                }
+            };
+
             const results = [];
 
             for (const portInfo of commonPorts) {
-                let open = false;
-
-                // Only HTTP/HTTPS can be checked from browser
+                let outcome = { open: false, status: 'unknown', reason: 'not_checked' };
                 if (portInfo.port === 80 || portInfo.port === 443 || portInfo.port === 8080 || portInfo.port === 8443) {
                     const protocol = (portInfo.port === 443 || portInfo.port === 8443) ? 'https' : 'http';
-                    try {
-                        const testUrl = `${protocol}://${target}:${portInfo.port}`;
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    const testUrl = `${protocol}://${target}:${portInfo.port}`;
 
-                        await fetch(testUrl, {
-                            method: 'HEAD',
-                            mode: 'no-cors',
-                            signal: controller.signal
-                        });
+                    const headOutcome = await attemptFetch(testUrl, 'HEAD', 'cors');
+                    let classified = classifyOutcome(headOutcome);
 
-                        clearTimeout(timeoutId);
-                        open = true;
-                    } catch (e) {
-                        open = false;
+                    if ((classified.status === 'unknown' || (classified.reason === 'http_error' && classified.status === 405)) && !classified.open) {
+                        const fallbackOutcome = await attemptFetch(testUrl, 'GET', 'no-cors');
+                        classified = classifyOutcome(fallbackOutcome);
                     }
+
+                    outcome = classified;
                 }
 
                 results.push({
                     port: portInfo.port,
                     service: portInfo.service,
-                    open: open,
+                    open: outcome.open,
+                    status: outcome.status,
+                    reason: outcome.reason,
                     description: portInfo.description
                 });
             }
@@ -373,44 +419,36 @@ class OSINTEngine {
 
     // Social Media Aggregation
     async searchSocialMedia(query, platforms) {
-        const results = [];
-
-        for (const platform of platforms) {
+        const platformPromises = platforms.map(platform => (async () => {
             try {
-                let result = null;
-
                 switch (platform) {
                     case 'twitter':
-                        result = await this.checkTwitter(query);
-                        break;
+                        return await this.checkTwitter(query);
                     case 'reddit':
-                        result = await this.checkReddit(query);
-                        break;
+                        return await this.checkReddit(query);
                     case 'github':
-                        result = await this.checkGitHub(query);
-                        break;
+                        return await this.checkGitHub(query);
                     case 'linkedin':
-                        result = await this.checkLinkedIn(query);
-                        break;
+                        return await this.checkLinkedIn(query);
                     case 'instagram':
-                        result = await this.checkInstagram(query);
-                        break;
+                        return await this.checkInstagram(query);
                     case 'facebook':
-                        result = await this.checkFacebook(query);
-                        break;
-                }
-
-                if (result) {
-                    results.push(result);
+                        return await this.checkFacebook(query);
+                    default:
+                        return { platform, found: false, error: 'Unsupported platform' };
                 }
             } catch (error) {
-                results.push({
-                    platform: platform,
-                    found: false,
-                    error: error.message
-                });
+                return { platform, found: false, error: error.message };
             }
-        }
+        })());
+
+        const settled = await Promise.allSettled(platformPromises);
+        const results = settled.map((result, index) => {
+            if (result.status === 'fulfilled') {
+                return result.value;
+            }
+            return { platform: platforms[index], found: false, error: result.reason?.message || 'Unable to check' };
+        });
 
         return { success: true, data: results };
     }
@@ -419,7 +457,7 @@ class OSINTEngine {
         try {
             const url = `https://twitter.com/${username}`;
             const checkResult = await this.checkUrlExists(url, 'Twitter/X');
-            const exists = checkResult.found;
+            const exists = checkResult.found === true;
 
             return {
                 platform: 'Twitter/X',
@@ -484,7 +522,7 @@ class OSINTEngine {
     async checkLinkedIn(username) {
         const url = `https://www.linkedin.com/in/${username}`;
         const checkResult = await this.checkUrlExists(url, 'LinkedIn');
-        const exists = checkResult.found;
+        const exists = checkResult.found === true;
 
         return {
             platform: 'LinkedIn',
@@ -498,7 +536,7 @@ class OSINTEngine {
     async checkInstagram(username) {
         const url = `https://www.instagram.com/${username}`;
         const checkResult = await this.checkUrlExists(url, 'Instagram');
-        const exists = checkResult.found;
+        const exists = checkResult.found === true;
 
         return {
             platform: 'Instagram',
@@ -512,7 +550,7 @@ class OSINTEngine {
     async checkFacebook(username) {
         const url = `https://www.facebook.com/${username}`;
         const checkResult = await this.checkUrlExists(url, 'Facebook');
-        const exists = checkResult.found;
+        const exists = checkResult.found === true;
 
         return {
             platform: 'Facebook',
@@ -550,12 +588,13 @@ class OSINTEngine {
         const hibpApiKey = (this.apiKeys && this.apiKeys.HIBP_API_KEY) ? this.apiKeys.HIBP_API_KEY : '';
         const hasKey = this.hasApiKey ? this.hasApiKey('HIBP') || Boolean(hibpApiKey) : Boolean(hibpApiKey);
 
-        const buildResponse = (breaches, note) => ({
+        const buildResponse = (breaches, note, mode = 'personalized') => ({
             success: true,
             data: {
                 email: email,
                 breaches: breaches,
                 note,
+                mode,
                 totalBreaches: breaches.length,
                 recentBreaches: breaches.slice(0, 5)
             }
@@ -576,28 +615,25 @@ class OSINTEngine {
 
             if (response.status === 401 || response.status === 403) {
                 return {
-                    success: false,
-                    error: 'HaveIBeenPwned API key is missing or invalid. Add your key to utils/api-keys.js to see full results.'
+                    success: true,
+                    data: buildResponse(fallbackBreaches, 'HaveIBeenPwned API key is missing or invalid. Add your key to utils/api-keys.js to see personalized breach results. Showing a limited sample instead.', 'limited').data
                 };
             }
 
             if (!response.ok) {
                 if (response.status === 404) {
-                    return buildResponse([], 'No breaches found for this email using your HaveIBeenPwned API key.');
+                    return buildResponse([], 'No breaches found for this email using your HaveIBeenPwned API key.', 'personalized');
                 }
                 throw new Error('Unable to fetch breach data');
             }
 
             const breaches = await response.json();
-            return buildResponse(breaches, 'Results retrieved from HaveIBeenPwned using your API key.');
+            return buildResponse(breaches, 'Results retrieved from HaveIBeenPwned using your API key.', 'personalized');
         };
 
         try {
             if (hasKey) {
                 const result = await fetchWithKey();
-                if (!result.success) {
-                    return result;
-                }
                 return result;
             }
 
@@ -613,12 +649,12 @@ class OSINTEngine {
                     DataClasses: b.DataClasses
                 }));
 
-                return buildResponse(limited, 'Showing a limited breach list. Add a HaveIBeenPwned API key for personalized results.');
+                return buildResponse(limited, 'Add your HaveIBeenPwned API key in utils/api-keys.js for personalized checks. Showing a limited sample of public breaches.', 'limited');
             }
 
-            return buildResponse(fallbackBreaches, 'Unable to reach HaveIBeenPwned without an API key. Showing a static breach sample.');
+            return buildResponse(fallbackBreaches, 'Add your HaveIBeenPwned API key in utils/api-keys.js for personalized checks. Unable to reach HaveIBeenPwned; showing a static sample.', 'limited');
         } catch (error) {
-            return buildResponse(fallbackBreaches, `Breach check encountered an issue (${error.message}). Showing a static breach sample.`);
+            return buildResponse(fallbackBreaches, `Breach check encountered an issue (${error.message}). Showing a static breach sample.`, 'limited');
         }
     }
 }
