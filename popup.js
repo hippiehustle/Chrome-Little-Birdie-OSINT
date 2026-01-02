@@ -72,18 +72,30 @@ class OSINTPopup {
             if (email) this.checkBreaches(email);
         });
 
+        // NSFW scan
+        document.getElementById('nsfw-search').addEventListener('click', () => {
+            const query = document.getElementById('nsfw-input').value.trim();
+            const consent = document.getElementById('nsfw-consent').checked;
+            if (!consent) {
+                this.showStatus('Please confirm consent before running NSFW scans.', 'error');
+                return;
+            }
+            if (query) this.searchNSFW(query);
+        });
+
         // Export and clear
         document.getElementById('export-btn').addEventListener('click', () => this.exportResults());
         document.getElementById('clear-btn').addEventListener('click', () => this.clearAll());
 
         // Enter key support
-        ['username-input', 'domain-input', 'social-input', 'breach-input'].forEach(id => {
+        ['username-input', 'domain-input', 'social-input', 'breach-input', 'nsfw-input'].forEach(id => {
             document.getElementById(id).addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     const tab = id.split('-')[0];
                     if (tab === 'username') document.getElementById('username-search').click();
                     else if (tab === 'breach') document.getElementById('breach-search').click();
                     else if (tab === 'social') document.getElementById('social-search').click();
+                    else if (tab === 'nsfw') document.getElementById('nsfw-search').click();
                 }
             });
         });
@@ -119,7 +131,7 @@ class OSINTPopup {
             }
         } catch (error) {
             this.showStatus(`Error: ${error.message}`, 'error');
-            resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
         }
     }
 
@@ -161,7 +173,7 @@ class OSINTPopup {
             }
         } catch (error) {
             this.showStatus(`Error: ${error.message}`, 'error');
-            resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
         }
     }
 
@@ -186,7 +198,7 @@ class OSINTPopup {
             }
         } catch (error) {
             this.showStatus(`Error: ${error.message}`, 'error');
-            resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
         }
     }
 
@@ -211,7 +223,7 @@ class OSINTPopup {
             }
         } catch (error) {
             this.showStatus(`Error: ${error.message}`, 'error');
-            resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
         }
     }
 
@@ -236,7 +248,7 @@ class OSINTPopup {
             }
         } catch (error) {
             this.showStatus(`Error: ${error.message}`, 'error');
-            resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
         }
     }
 
@@ -309,7 +321,7 @@ class OSINTPopup {
             }
         } catch (error) {
             this.showStatus(`Error: ${error.message}`, 'error');
-            resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
         }
     }
 
@@ -328,7 +340,61 @@ class OSINTPopup {
                 ${result.followers ? `<p><strong>Followers:</strong> ${result.followers}</p>` : ''}
                 ${result.bio ? `<p><strong>Bio:</strong> ${result.bio}</p>` : ''}
                 ${result.details ? `<p>${result.details}</p>` : ''}
-                ${result.error ? `<p style="color: red;">${result.error}</p>` : ''}
+                ${result.error ? `<p style="color: #ff2b2b;">${result.error}</p>` : ''}
+            `;
+            resultsDiv.appendChild(item);
+        });
+    }
+
+    async searchNSFW(query) {
+        this.showStatus('Scanning NSFW platforms...', 'info');
+        const resultsDiv = document.getElementById('nsfw-results');
+        resultsDiv.innerHTML = '<div class="loading"></div> Checking NSFW sources...';
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'searchNSFW',
+                query: query
+            });
+
+            if (response.success) {
+                const data = response.data.results || [];
+                this.results.nsfw = data;
+                this.displayNSFWResults(data, response.data);
+                this.showStatus(`NSFW scan completed across ${data.length} sources`, 'success');
+                chrome.storage.local.set({ lastResults: this.results });
+            } else {
+                throw new Error(response.error);
+            }
+        } catch (error) {
+            this.showStatus(`Error: ${error.message}`, 'error');
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
+        }
+    }
+
+    displayNSFWResults(results, meta = {}) {
+        const resultsDiv = document.getElementById('nsfw-results');
+        resultsDiv.innerHTML = '';
+
+        const summary = document.createElement('div');
+        summary.className = 'result-item';
+        summary.innerHTML = `
+            <p><strong>Query:</strong> ${meta.query || ''}</p>
+            <p><strong>Identifier:</strong> ${meta.identifier || ''}</p>
+            <p><strong>Input Type:</strong> ${meta.inputType || ''}</p>
+        `;
+        resultsDiv.appendChild(summary);
+
+        results.forEach(result => {
+            const item = document.createElement('div');
+            const statusClass = result.found ? 'result-found' : (result.details && result.details.includes('could not be verified') ? 'result-warning' : 'result-not-found');
+            item.className = `result-item ${statusClass}`;
+            item.innerHTML = `
+                <h3>${result.platform}</h3>
+                <p><strong>Status:</strong> ${result.found ? 'Profile Found' : 'Not Found'}</p>
+                ${result.url ? `<p><a href="${result.url}" target="_blank">View Profile</a></p>` : ''}
+                ${result.details ? `<p>${result.details}</p>` : ''}
+                ${result.error ? `<p style="color: #ff2b2b;">${result.error}</p>` : ''}
             `;
             resultsDiv.appendChild(item);
         });
@@ -359,7 +425,7 @@ class OSINTPopup {
             }
         } catch (error) {
             this.showStatus(`Error: ${error.message}`, 'error');
-            resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            resultsDiv.innerHTML = `<p style="color: #ff2b2b;">Error: ${error.message}</p>`;
         }
     }
 
@@ -419,6 +485,10 @@ class OSINTPopup {
         document.querySelectorAll('input[type="text"]').forEach(input => {
             input.value = '';
         });
+        const nsfwConsent = document.getElementById('nsfw-consent');
+        if (nsfwConsent) {
+            nsfwConsent.checked = false;
+        }
         chrome.storage.local.remove('lastResults');
         this.showStatus('All data cleared', 'info');
     }
