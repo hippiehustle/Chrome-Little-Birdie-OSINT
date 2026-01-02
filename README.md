@@ -25,10 +25,11 @@ Aggregate social media profiles across multiple platforms:
 - Multi-platform search capability
 
 ### 4. Breach Database Check
-- Integration with HaveIBeenPwned API
+- Integration with HaveIBeenPwned API (with optional API key)
 - Check email addresses against known data breaches
 - View breach details including compromised data types
 - Track recent security breaches
+- Fallback to a limited breach list when no API key is configured so you still see meaningful results
 
 ### 5. Page Analysis (Auto-Extract)
 Automatically analyzes web pages to extract:
@@ -101,6 +102,8 @@ const API_KEYS = {
     SECURITYTRAILS_API_KEY: 'your-key-here' // SecurityTrails
 };
 ```
+
+Create a copy of `utils/api-keys.example.js` named `utils/api-keys.js` and populate it with your keys. The Breach tab will use your **HaveIBeenPwned** key (if provided) to return full breach results; without a key, it will fall back to a limited public breach list so the tab remains informative instead of showing an error.
 
 **Free API Key Resources**:
 - HaveIBeenPwned: https://haveibeenpwned.com/API/Key

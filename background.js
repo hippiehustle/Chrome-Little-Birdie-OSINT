@@ -1,7 +1,29 @@
 // Background Service Worker for Kaotic OSINT
 class OSINTEngine {
     constructor() {
+        this.apiKeysLoaded = false;
+        this.apiKeys = {};
+        this.hasApiKey = () => false;
         this.setupMessageListener();
+    }
+
+    async ensureApiKeysLoaded() {
+        if (this.apiKeysLoaded) {
+            return;
+        }
+
+        const loadPromise = import(chrome.runtime.getURL('utils/api-keys.js'))
+            .then(module => {
+                this.apiKeys = module.API_KEYS || {};
+                this.hasApiKey = module.hasApiKey || (() => false);
+            })
+            .catch(() => {
+                this.apiKeys = {};
+                this.hasApiKey = () => false;
+            });
+
+        await loadPromise;
+        this.apiKeysLoaded = true;
     }
 
     setupMessageListener() {
@@ -65,12 +87,13 @@ class OSINTEngine {
 
         for (const platform of platforms) {
             try {
-                const found = await this.checkUrlExists(platform.checkUrl, platform.name);
+                const checkResult = await this.checkUrlExists(platform.checkUrl, platform.name);
+                const found = checkResult.found;
                 results.push({
                     platform: platform.name,
                     found: found,
                     url: found ? platform.url : null,
-                    details: found ? 'Profile exists' : 'Profile not found'
+                    details: this.describeCheckResult(checkResult)
                 });
             } catch (error) {
                 results.push({
@@ -87,11 +110,38 @@ class OSINTEngine {
 
     // Check if URL exists (profile check)
     async checkUrlExists(url, platform) {
+        const evaluateResponse = (response, attemptMethod) => {
+            if (!response) {
+                return { found: false, status: null, method: attemptMethod, reason: 'network_error' };
+            }
+
+            if (response.type === 'opaque') {
+                return { found: false, status: null, method: attemptMethod, reason: 'opaque_response' };
+            }
+
+            if (response.status >= 200 && response.status < 400) {
+                return { found: true, status: response.status, method: attemptMethod, reason: 'ok' };
+            }
+
+            return { found: false, status: response.status, method: attemptMethod, reason: 'http_error' };
+        };
+
+        const performRequest = async (method) => {
+            try {
+                return await fetch(url, {
+                    method,
+                    redirect: 'follow'
+                });
+            } catch (error) {
+                return null;
+            }
+        };
+
         try {
             // Special handling for GitHub API
             if (platform === 'GitHub') {
                 const response = await fetch(url);
-                return response.status === 200;
+                return evaluateResponse(response, 'GET');
             }
 
             // Special handling for Reddit API
@@ -99,23 +149,57 @@ class OSINTEngine {
                 const response = await fetch(url);
                 if (response.status === 200) {
                     const data = await response.json();
-                    return data && data.data && data.data.name;
+                    return {
+                        found: Boolean(data && data.data && data.data.name),
+                        status: response.status,
+                        method: 'GET',
+                        reason: 'ok'
+                    };
                 }
-                return false;
+                return { found: false, status: response.status, method: 'GET', reason: 'http_error' };
             }
 
-            // For other platforms, check if URL is accessible
-            const response = await fetch(url, {
-                method: 'HEAD',
-                mode: 'no-cors' // Bypass CORS for basic check
-            });
+            // Attempt HEAD first, fall back to GET if necessary
+            const headResponse = await performRequest('HEAD');
+            const headResult = evaluateResponse(headResponse, 'HEAD');
 
-            // In no-cors mode, we get an opaque response
-            // We'll assume the URL exists if no error is thrown
-            return true;
+            if (headResult.found) {
+                return headResult;
+            }
+
+            if (headResult.reason === 'http_error' && headResult.status && headResult.status !== 405) {
+                return headResult;
+            }
+
+            // Some platforms do not allow HEAD; try GET as a fallback
+            const getResponse = await performRequest('GET');
+            const getResult = evaluateResponse(getResponse, 'GET');
+            return getResult;
         } catch (error) {
-            return false;
+            return { found: false, status: null, method: 'GET', reason: error.message };
         }
+    }
+
+    describeCheckResult(checkResult) {
+        if (!checkResult) return 'Unable to verify';
+
+        if (checkResult.found) {
+            return checkResult.status ? `Profile reachable (HTTP ${checkResult.status})` : 'Profile appears reachable';
+        }
+
+        if (checkResult.reason === 'opaque_response') {
+            return 'Profile could not be verified due to opaque response';
+        }
+
+        if (checkResult.reason === 'network_error') {
+            return 'Network error while checking profile';
+        }
+
+        if (checkResult.reason === 'http_error' && checkResult.status) {
+            return `Profile not found (HTTP ${checkResult.status})`;
+        }
+
+        return 'Profile not found';
     }
 
     // WHOIS Lookup
@@ -334,13 +418,15 @@ class OSINTEngine {
     async checkTwitter(username) {
         try {
             const url = `https://twitter.com/${username}`;
-            const exists = await this.checkUrlExists(url, 'Twitter/X');
+            const checkResult = await this.checkUrlExists(url, 'Twitter/X');
+            const exists = checkResult.found;
 
             return {
                 platform: 'Twitter/X',
                 found: exists,
                 url: exists ? url : null,
-                username: username
+                username: username,
+                details: this.describeCheckResult(checkResult)
             };
         } catch (error) {
             return { platform: 'Twitter/X', found: false, error: error.message };
@@ -397,73 +483,142 @@ class OSINTEngine {
 
     async checkLinkedIn(username) {
         const url = `https://www.linkedin.com/in/${username}`;
-        const exists = await this.checkUrlExists(url, 'LinkedIn');
+        const checkResult = await this.checkUrlExists(url, 'LinkedIn');
+        const exists = checkResult.found;
 
         return {
             platform: 'LinkedIn',
             found: exists,
             url: exists ? url : null,
-            username: username
+            username: username,
+            details: this.describeCheckResult(checkResult)
         };
     }
 
     async checkInstagram(username) {
         const url = `https://www.instagram.com/${username}`;
-        const exists = await this.checkUrlExists(url, 'Instagram');
+        const checkResult = await this.checkUrlExists(url, 'Instagram');
+        const exists = checkResult.found;
 
         return {
             platform: 'Instagram',
             found: exists,
             url: exists ? url : null,
-            username: username
+            username: username,
+            details: this.describeCheckResult(checkResult)
         };
     }
 
     async checkFacebook(username) {
         const url = `https://www.facebook.com/${username}`;
-        const exists = await this.checkUrlExists(url, 'Facebook');
+        const checkResult = await this.checkUrlExists(url, 'Facebook');
+        const exists = checkResult.found;
 
         return {
             platform: 'Facebook',
             found: exists,
             url: exists ? url : null,
-            username: username
+            username: username,
+            details: this.describeCheckResult(checkResult)
         };
     }
 
     // Breach Database Check (HaveIBeenPwned)
     async checkBreaches(email) {
-        try {
-            // HaveIBeenPwned API v3 requires API key for email search
-            // Using the public breach list instead
-            const response = await fetch('https://haveibeenpwned.com/api/v3/breaches');
+        const fallbackBreaches = [
+            {
+                name: 'Adobe',
+                date: '2013-10-04',
+                description: 'Usernames, email addresses, and password hints.',
+                DataClasses: ['Email addresses', 'Password hints', 'Passwords', 'Usernames']
+            },
+            {
+                name: 'LinkedIn',
+                date: '2012-05-05',
+                description: 'Usernames, email addresses, and salted SHA1 passwords.',
+                DataClasses: ['Email addresses', 'Passwords', 'Usernames']
+            },
+            {
+                name: 'Dropbox',
+                date: '2012-07-01',
+                description: 'Email addresses and salted SHA1 passwords.',
+                DataClasses: ['Email addresses', 'Passwords']
+            }
+        ];
+
+        await this.ensureApiKeysLoaded();
+        const hibpApiKey = (this.apiKeys && this.apiKeys.HIBP_API_KEY) ? this.apiKeys.HIBP_API_KEY : '';
+        const hasKey = this.hasApiKey ? this.hasApiKey('HIBP') || Boolean(hibpApiKey) : Boolean(hibpApiKey);
+
+        const buildResponse = (breaches, note) => ({
+            success: true,
+            data: {
+                email: email,
+                breaches: breaches,
+                note,
+                totalBreaches: breaches.length,
+                recentBreaches: breaches.slice(0, 5)
+            }
+        });
+
+        const fetchWithKey = async () => {
+            const headers = {
+                'User-Agent': 'Kaotic-OSINT/1.0'
+            };
+
+            if (hibpApiKey) {
+                headers['hibp-api-key'] = hibpApiKey;
+            }
+
+            const response = await fetch(`https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=true`, {
+                headers
+            });
+
+            if (response.status === 401 || response.status === 403) {
+                return {
+                    success: false,
+                    error: 'HaveIBeenPwned API key is missing or invalid. Add your key to utils/api-keys.js to see full results.'
+                };
+            }
 
             if (!response.ok) {
+                if (response.status === 404) {
+                    return buildResponse([], 'No breaches found for this email using your HaveIBeenPwned API key.');
+                }
                 throw new Error('Unable to fetch breach data');
             }
 
-            const allBreaches = await response.json();
+            const breaches = await response.json();
+            return buildResponse(breaches, 'Results retrieved from HaveIBeenPwned using your API key.');
+        };
 
-            // Note: This is a demonstration. Full email breach check requires API key
-            // For production, users should get their own HaveIBeenPwned API key
-
-            return {
-                success: true,
-                data: {
-                    email: email,
-                    breaches: [],
-                    note: 'Full breach check requires HaveIBeenPwned API key. Showing available breach database info.',
-                    totalBreaches: allBreaches.length,
-                    recentBreaches: allBreaches.slice(0, 5).map(b => ({
-                        name: b.Name,
-                        date: b.BreachDate,
-                        description: b.Description,
-                        DataClasses: b.DataClasses
-                    }))
+        try {
+            if (hasKey) {
+                const result = await fetchWithKey();
+                if (!result.success) {
+                    return result;
                 }
-            };
+                return result;
+            }
+
+            // No key configured: use public breach listing as a limited fallback
+            const publicResponse = await fetch('https://haveibeenpwned.com/api/v3/breaches');
+
+            if (publicResponse.ok) {
+                const allBreaches = await publicResponse.json();
+                const limited = allBreaches.slice(0, 5).map(b => ({
+                    name: b.Name,
+                    date: b.BreachDate,
+                    description: b.Description,
+                    DataClasses: b.DataClasses
+                }));
+
+                return buildResponse(limited, 'Showing a limited breach list. Add a HaveIBeenPwned API key for personalized results.');
+            }
+
+            return buildResponse(fallbackBreaches, 'Unable to reach HaveIBeenPwned without an API key. Showing a static breach sample.');
         } catch (error) {
-            return { success: false, error: `Breach check failed: ${error.message}` };
+            return buildResponse(fallbackBreaches, `Breach check encountered an issue (${error.message}). Showing a static breach sample.`);
         }
     }
 }
